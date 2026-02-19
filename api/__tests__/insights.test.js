@@ -44,7 +44,7 @@ describe('AI insights endpoint (Gemini → Groq)', () => {
 
     expect(global.fetch).toHaveBeenCalled()
     expect(res.status).toHaveBeenCalledWith(200)
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ ok: true, ai: expect.any(Object) }))
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ ok: true, provider: 'groq', ai: expect.any(Object) }))
   })
 
   it('prefers Gemini when GEMINI_API_KEY is present', async () => {
@@ -59,6 +59,7 @@ describe('AI insights endpoint (Gemini → Groq)', () => {
 
     expect(global.fetch).toHaveBeenCalled()
     expect(res.status).toHaveBeenCalledWith(200)
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ ok: true, provider: 'gemini' }))
   })
 
   it('falls back to Groq when Gemini responds with non-OK and GROQ_API_KEY is set', async () => {
@@ -80,7 +81,7 @@ describe('AI insights endpoint (Gemini → Groq)', () => {
 
     expect(global.fetch).toHaveBeenCalled()
     expect(res.status).toHaveBeenCalledWith(200)
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ ok: true, ai: expect.any(Object) }))
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ ok: true, provider: 'groq', ai: expect.any(Object) }))
   })
 
 

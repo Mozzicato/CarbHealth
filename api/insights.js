@@ -35,22 +35,32 @@ export default async function handler(req, res) {
         body: JSON.stringify(body),
       });
 
+      // Read status + body (support mocks that expose `json()` instead of `text()`)
+      const status = r.status ?? (r.ok ? 200 : undefined);
+      let bodyText = '';
+      let parsedBody = null;
+      if (typeof r.text === 'function') {
+        bodyText = await r.text();
+        try { parsedBody = JSON.parse(bodyText); } catch (e) { parsedBody = null; }
+      } else if (typeof r.json === 'function') {
+        try { parsedBody = await r.json(); bodyText = typeof parsedBody === 'string' ? parsedBody : JSON.stringify(parsedBody); } catch (e) { bodyText = ''; parsedBody = null; }
+      }
+
       if (!r.ok) {
-        const txt = await r.text();
-        // If Gemini fails, prefer Groq when configured; otherwise return an upstream error.
+        const mapped = (status === 401 || status === 403) ? 'Invalid or unauthorized GEMINI_API_KEY' : (status === 429 ? 'Gemini rate-limited' : 'Upstream Gemini error');
         if (GROQ_KEY) {
-          console.warn('Gemini upstream error — falling back to Groq:', txt);
+          console.warn('Gemini upstream error — falling back to Groq:', status, bodyText);
           // intentionally fall through to Groq branch below
         } else {
-          return res.status(502).json({ error: 'Upstream Gemini error', details: txt });
+          return res.status(502).json({ error: mapped, status, details: bodyText });
         }
       } else {
-        const data = await r.json();
+        const data = parsedBody ?? JSON.parse(bodyText || '{}');
         const text = data.candidates?.[0]?.output || data.candidates?.[0]?.content?.[0]?.text || data.output?.[0]?.content_text || data.output_text || '';
 
         let parsed = null;
         try { parsed = JSON.parse(text); } catch (err) { parsed = { raw: text }; }
-        return res.status(200).json({ ok: true, ai: parsed });
+        return res.status(200).json({ ok: true, provider: 'gemini', ai: parsed });
       }
     } catch (err) {
       // If Gemini threw but Groq is configured, fall back to Groq; otherwise return error
@@ -122,7 +132,7 @@ Confirmation: Acknowledge that you understand your architecture is based on Groq
 
       let parsed = null;
       try { parsed = JSON.parse(text); } catch (err) { parsed = { raw: text }; }
-      return res.status(200).json({ ok: true, ai: parsed });
+      return res.status(200).json({ ok: true, provider: 'groq', ai: parsed });
     } catch (err) {
       return res.status(500).json({ error: 'Groq request failed', message: String(err) });
     }

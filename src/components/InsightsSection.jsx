@@ -20,8 +20,8 @@ export default function InsightsSection({ foodLog }) {
         body: JSON.stringify({ foodLog }),
       });
       const json = await r.json();
-      if (json?.ok && json.ai) setAiResult(json.ai);
-      else setAiResult({ raw: json?.error || 'No AI response' });
+      if (json?.ok && json.ai) setAiResult({ ...json.ai, _provider: json.provider });
+      else setAiResult({ raw: json?.error || json?.details || 'No AI response', _provider: json?.provider });
     } catch (err) {
       setAiResult({ raw: String(err) });
     } finally {
@@ -45,20 +45,23 @@ export default function InsightsSection({ foodLog }) {
       </div>
 
       {aiResult ? (
-        <div className="insights-grid">
-          {Array.isArray(aiResult.insights) ? (
-            aiResult.insights.map((insight, i) => (
-              <div key={i} className="insight-card">
-                <div className="insight-icon">{insight.severity === 'high' ? '🚨' : '💡'}</div>
-                <h4>{insight.title}</h4>
-                <p>{insight.message}</p>
+        <div>
+          <div style={{ marginBottom: 8, fontSize: 12, color: '#666' }}>{aiResult._provider ? `Provider: ${aiResult._provider}` : null}</div>
+          <div className="insights-grid">
+            {Array.isArray(aiResult.insights) ? (
+              aiResult.insights.map((insight, i) => (
+                <div key={i} className="insight-card">
+                  <div className="insight-icon">{insight.severity === 'high' ? '🚨' : '💡'}</div>
+                  <h4>{insight.title}</h4>
+                  <p>{insight.message}</p>
+                </div>
+              ))
+            ) : (
+              <div className="insight-card">
+                <pre style={{ whiteSpace: 'pre-wrap' }}>{aiResult.raw || JSON.stringify(aiResult)}</pre>
               </div>
-            ))
-          ) : (
-            <div className="insight-card">
-              <pre style={{ whiteSpace: 'pre-wrap' }}>{aiResult.raw || JSON.stringify(aiResult)}</pre>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       ) : (
         <div className="insights-grid">
