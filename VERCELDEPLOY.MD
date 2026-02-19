@@ -12,10 +12,11 @@ A concise step‑by‑step guide to make the app public on Vercel and enable the
 ---
 
 ## 1) Required environment variables (add in Vercel Project → Settings → Environment Variables)
-- OPENAI_API_KEY — server-only key for `/api/insights` (production only)
-- SANITY_PROJECT_ID — your Sanity project id (for GROQ proxy)
-- SANITY_DATASET — your Sanity dataset name
-- GROQ_API_KEY — Sanity **server token** used by `/api/sanity-*` endpoints
+- GEMINI_API_KEY — **preferred** server-only key for `/api/insights` (production only)
+- GROQ_API_KEY — optional server-side fallback (Groq LPU) — set to enable Groq as secondary AI provider
+- GROQ_URL — optional (defaults to `https://api.groq.com/openai/v1`) if you need a custom Groq endpoint
+- GROQ_MODEL — optional (defaults to `llama3-8b`)
+- OPENAI_API_KEY — optional fallback for `/api/insights` (if you want OpenAI as tertiary fallback)
 
 Optional (frontend) Vite variables (prefix VITE_ — these are public):
 - VITE_APP_TITLE (default `CarbHEALTH`)
@@ -24,7 +25,7 @@ Optional (frontend) Vite variables (prefix VITE_ — these are public):
 - VITE_ENABLE_TRIVIA (`true|false`)
 - VITE_API_URL (if you have a separate API)
 
-Important: keep OPENAI_API_KEY and GROQ_API_KEY as **server** env vars (do NOT prefix with `VITE_`).
+Important: keep GEMINI_API_KEY, GROQ_API_KEY and OPENAI_API_KEY as **server** env vars (do NOT prefix with `VITE_`).
 
 ---
 
@@ -68,9 +69,9 @@ curl -X POST https://<your-deployment>/api/insights \
   -H 'Content-Type: application/json' \
   -d '{"foodLog":[{"food":{"name":"Coke","carbs":39,"sugar":39,"gi":63},"quantity":1,"time":"2026-02-19T00:00:00Z"}]}'
 ```
-- Test Sanity/GROQ proxy (requires SANITY vars):
+- Test GROQ fallback endpoint (local fallback; no SANITY needed):
 ```bash
-curl -X POST https://<your-deployment>/api/sanity-query \
+curl -X POST https://<your-deployment>/api/groq \
   -H 'Content-Type: application/json' \
   -d '{"query":"*[_type == \"food\"]"}'
 ```
