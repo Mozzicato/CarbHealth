@@ -10,7 +10,7 @@ export default async function handler(req, res) {
   const GEMINI_URL = process.env.GEMINI_API_URL; // optional custom URL for Gemini
   const GROQ_KEY = process.env.GROQ_API_KEY;
   const GROQ_URL = process.env.GROQ_API_URL || 'https://api.groq.com/openai/v1';
-  const GROQ_MODEL = process.env.GROQ_MODEL || 'llama3-8b';
+  const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
 
   if (!GEMINI_KEY && !GROQ_KEY) {
     return res.status(500).json({ error: 'AI provider API key not configured on server. Set GEMINI_API_KEY or GROQ_API_KEY.' });
@@ -22,11 +22,19 @@ export default async function handler(req, res) {
   // 1) Primary: Gemini (managed by Google)
   if (GEMINI_KEY) {
     try {
-      const endpoint = GEMINI_URL || `https://generativelanguage.googleapis.com/v1beta2/models/text-bison-001:generateText?key=${GEMINI_KEY}`;
+      // Use current Gemini 2.0 Flash endpoint
+      const endpoint = GEMINI_URL || `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`;
+
+      // Update body structure for generateContent
       const body = {
-        prompt: { text: `${system}\n\n${user}` },
-        temperature: 0.7,
-        maxOutputTokens: 800,
+        contents: [{
+          role: 'user',
+          parts: [{ text: `${system}\n\n${user}` }]
+        }],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 800,
+        }
       };
 
       const r = await fetch(endpoint, {
@@ -35,31 +43,32 @@ export default async function handler(req, res) {
         body: JSON.stringify(body),
       });
 
-      // Read status + body (support mocks that expose `json()` instead of `text()`)
-      const status = r.status ?? (r.ok ? 200 : undefined);
-      let bodyText = '';
+      // Read status + body
+      const status = r.status;
+      const bodyText = await r.text();
+
       let parsedBody = null;
-      if (typeof r.text === 'function') {
-        bodyText = await r.text();
-        try { parsedBody = JSON.parse(bodyText); } catch (e) { parsedBody = null; }
-      } else if (typeof r.json === 'function') {
-        try { parsedBody = await r.json(); bodyText = typeof parsedBody === 'string' ? parsedBody : JSON.stringify(parsedBody); } catch (e) { bodyText = ''; parsedBody = null; }
-      }
+      try { parsedBody = JSON.parse(bodyText); } catch (e) { parsedBody = null; }
 
       if (!r.ok) {
+        console.error('Gemini API Error details:', { status, bodyText });
         const mapped = (status === 401 || status === 403) ? 'Invalid or unauthorized GEMINI_API_KEY' : (status === 429 ? 'Gemini rate-limited' : 'Upstream Gemini error');
         if (GROQ_KEY) {
-          console.warn('Gemini upstream error — falling back to Groq:', status, bodyText);
+          console.warn('Gemini upstream error — falling back to Groq:', status);
           // intentionally fall through to Groq branch below
         } else {
           return res.status(502).json({ error: mapped, status, details: bodyText });
         }
       } else {
-        const data = parsedBody ?? JSON.parse(bodyText || '{}');
-        const text = data.candidates?.[0]?.output || data.candidates?.[0]?.content?.[0]?.text || data.output?.[0]?.content_text || data.output_text || '';
+        const data = parsedBody || {};
+        // Parse Gemini response structure: candidates[0].content.parts[0].text
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+        // If explicitly JSON is expected but the text contains markdown code blocks, strip them
+        const cleanText = text.replace(/```json\n|\n```/g, '').trim();
 
         let parsed = null;
-        try { parsed = JSON.parse(text); } catch (err) { parsed = { raw: text }; }
+        try { parsed = JSON.parse(cleanText); } catch (err) { parsed = { raw: cleanText }; }
         return res.status(200).json({ ok: true, provider: 'gemini', ai: parsed });
       }
     } catch (err) {
