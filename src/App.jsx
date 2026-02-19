@@ -4,6 +4,12 @@ import Dashboard from './components/Dashboard';
 import TriviaPopup from './components/TriviaPopup';
 import InsightsSection from './components/InsightsSection';
 
+// Environment-controlled defaults (Vite expects VITE_ prefix)
+const APP_TITLE = import.meta.env.VITE_APP_TITLE ?? 'CarbHEALTH';
+const INITIAL_USERS = Number(import.meta.env.VITE_INITIAL_USERS ?? 1247);
+const INITIAL_SUGAR_SAVED = Number(import.meta.env.VITE_INITIAL_SUGAR_SAVED ?? 34.5);
+const ENABLE_TRIVIA = (import.meta.env.VITE_ENABLE_TRIVIA ?? 'true') === 'true';
+
 export default function App() {
   const [foodLog, setFoodLog] = useState(() => {
     try {
@@ -23,8 +29,8 @@ export default function App() {
       return 0;
     }
   });
-  const [totalUsers, setTotalUsers] = useState(1247);
-  const [sugarSaved, setSugarSaved] = useState(34.5);
+  const [totalUsers, setTotalUsers] = useState(INITIAL_USERS);
+  const [sugarSaved, setSugarSaved] = useState(INITIAL_SUGAR_SAVED);
 
   // persist foodLog + streak
   useEffect(() => {
@@ -47,7 +53,7 @@ export default function App() {
 
   // Show trivia after 3 items logged
   useEffect(() => {
-    if (foodLog.length > 0 && foodLog.length % 3 === 0) {
+    if (ENABLE_TRIVIA && foodLog.length > 0 && foodLog.length % 3 === 0) {
       setShowTrivia(true);
     }
   }, [foodLog.length]);
@@ -69,7 +75,7 @@ export default function App() {
       {/* HERO HEADER */}
       <header className="hero-header">
         <div className="hero-badge">⚡ Powered by AI Metabolic Intelligence</div>
-        <h1 className="hero-title">CarbHEALTH</h1>
+        <h1 className="hero-title">{APP_TITLE}</h1>
         <p className="hero-subtitle">
           Understand how every meal affects your energy, performance, and long-term health.
           Make smarter choices with real-time metabolic insights.
