@@ -4,7 +4,7 @@ import { calcDailyStats } from '../utils/calculator';
 export default function InsightsSection({ foodLog }) {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState(null);
-  const lastLoggedCount = useRef(foodLog?.length || 0);
+  const [error, setError] = useState(null);
 
   const stats = calcDailyStats(foodLog || []);
   const localInsights = generateInsights(stats, foodLog || []);
@@ -13,7 +13,7 @@ export default function InsightsSection({ foodLog }) {
     if (!foodLog || foodLog.length === 0) return;
 
     setAiLoading(true);
-    // setAiResult(null); // Keep old insights while loading for smoother UI
+    setError(null);
     try {
       const r = await fetch('/api/insights', {
         method: 'POST',
@@ -24,130 +24,145 @@ export default function InsightsSection({ foodLog }) {
       if (json?.ok && json.ai) {
         setAiResult({ ...json.ai, _provider: json.provider });
       } else {
-        setAiResult({ raw: json?.error || json?.details || 'No AI response', _provider: json?.provider });
+        setError(json?.error || json?.details || 'AI Service temporarily unavailable');
       }
     } catch (err) {
       console.error('AI Insight Error:', err);
-      setAiResult({ raw: String(err) });
+      setError('Connection failed. Please check your network.');
     } finally {
       setAiLoading(false);
     }
   }, [foodLog]);
 
-  // AUTOMATIC UPDATES: Trigger whenever a new item is added
+  // Robust Automatic Update on log change
   useEffect(() => {
-    if (foodLog.length > 0 && foodLog.length !== lastLoggedCount.current) {
-      // Debounce slightly to avoid double calls if many items added rapidly
-      const timer = setTimeout(() => {
-        fetchAiInsights();
-      }, 1000);
-      lastLoggedCount.current = foodLog.length;
-      return () => clearTimeout(timer);
+    if (foodLog.length === 0) {
+      setAiResult(null);
+      return;
     }
+
+    // Always fetch on new length, with debounce
+    const timer = setTimeout(() => {
+      fetchAiInsights();
+    }, 1500);
+
+    return () => clearTimeout(timer);
   }, [foodLog.length, fetchAiInsights]);
 
   if (!foodLog || foodLog.length === 0) return null;
 
   return (
-    <div className="card">
-      <div className="card-header">
-        <span className="card-icon">🧠</span>
-        <h2 className="card-title">Personalized Insights</h2>
-        <span className="card-badge">AI-Powered</span>
-      </div>
+    <section className="insights-container">
+      <div className="card insights-main-card">
+        <div className="card-header">
+          <div className="card-header-main">
+            <span className="card-icon">🧠</span>
+            <div>
+              <h2 className="card-title">Metabolic Intelligence</h2>
+              <p className="card-subtitle">AI analysis of your glucose & insulin response</p>
+            </div>
+          </div>
+          <div className="card-actions">
+            {aiLoading && <div className="loading-status"><span className="loading-spinner"></span> Analyzing...</div>}
+            <button className="btn-refresh" onClick={fetchAiInsights} title="Force Refresh">
+              <span className="icon">🔄</span>
+            </button>
+          </div>
+        </div>
 
-      <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
-        <button className="btn-primary" onClick={fetchAiInsights} disabled={aiLoading}>
-          {aiLoading ? 'Analyzing...' : 'Refresh AI Insights'}
-        </button>
-        <button className="btn-secondary" onClick={() => setAiResult(null)}>Clear AI</button>
-      </div>
+        {error && (
+          <div className="insight-error-banner">
+            <span className="icon">⚠️</span>
+            <p>{error}</p>
+            <button onClick={fetchAiInsights} className="btn-retry">Retry</button>
+          </div>
+        )}
 
-      {aiResult ? (
-        <div>
-          <div style={{ marginBottom: 8, fontSize: 12, color: '#666' }}>{aiResult._provider ? `Provider: ${aiResult._provider}` : null}</div>
-          <div className="insights-grid">
-            {Array.isArray(aiResult.insights) ? (
-              aiResult.insights.map((insight, i) => (
-                <div key={i} className="insight-card">
-                  <div className="insight-icon">{insight.severity === 'high' ? '🚨' : '💡'}</div>
-                  <h4>{insight.title}</h4>
-                  <p>{insight.message}</p>
+        <div className="insights-layout">
+          {/* AI INSIGHTS SECTION */}
+          <div className="ai-insights-section">
+            <h3 className="section-label">
+              <span className="dot"></span> AI Synthesis
+            </h3>
+
+            <div className="insights-grid">
+              {aiLoading && !aiResult ? (
+                // Skeleton cards
+                [1, 2, 3].map(i => (
+                  <div key={i} className="insight-card skeleton">
+                    <div className="skeleton-line" style={{ width: '40%' }}></div>
+                    <div className="skeleton-line" style={{ width: '100%' }}></div>
+                    <div className="skeleton-line" style={{ width: '80%' }}></div>
+                  </div>
+                ))
+              ) : aiResult && Array.isArray(aiResult.insights) ? (
+                aiResult.insights.map((insight, i) => (
+                  <div key={i} className={`insight-card severity-${insight.severity || 'low'}`}>
+                    <div className="insight-header">
+                      <span className="severity-badge">{insight.severity || 'low'}</span>
+                      <span className="insight-icon-small">{insight.severity === 'high' ? '🚨' : '💡'}</span>
+                    </div>
+                    <h4>{insight.title}</h4>
+                    <p>{insight.message}</p>
+                  </div>
+                ))
+              ) : (
+                <div className="ai-empty-prompt">
+                  <p>Logging more meals helps build your AI metabolic profile.</p>
                 </div>
-              ))
-            ) : (
-              <div className="insight-card">
-                <pre style={{ whiteSpace: 'pre-wrap' }}>{aiResult.raw || JSON.stringify(aiResult)}</pre>
+              )}
+            </div>
+
+            {aiResult?.summary && (
+              <div className="ai-summary-box">
+                <strong>Summary:</strong> {aiResult.summary}
               </div>
             )}
           </div>
-        </div>
-      ) : (
-        <div className="insights-grid">
-          {localInsights.map((insight, i) => (
-            <div key={i} className="insight-card">
-              <div className="insight-icon">{insight.icon}</div>
-              <h4>{insight.title}</h4>
-              <p>{insight.message}</p>
+
+          {/* QUICK CHECKS (Local Logic) */}
+          <div className="local-insights-section">
+            <h3 className="section-label">Quick Checks</h3>
+            <div className="mini-insights-stack">
+              {localInsights.map((insight, i) => (
+                <div key={i} className="insight-mini-card">
+                  <span className="mini-icon">{insight.icon}</span>
+                  <div className="mini-content">
+                    <h4>{insight.title}</h4>
+                    <p>{insight.message}</p>
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
+          </div>
         </div>
-      )}
-    </div>
+      </div>
+    </section>
   );
 }
 
 function generateInsights(stats, foodLog) {
   const insights = [];
 
-  if (stats.sugar > 50) {
-    insights.push({
-      icon: '🚨',
-      title: 'High Sugar Alert',
-      message: `You've consumed ${stats.sugar.toFixed(0)}g of sugar today. The WHO recommends <25g daily. Consider swapping sodas for water or beans.`
-    });
+  if (stats.sugar > 40) {
+    insights.push({ icon: '🚨', title: 'Sugar Peak', message: 'Critical insulin load detected.' });
   }
 
   if (stats.fiber < 5) {
-    insights.push({
-      icon: '🌾',
-      title: 'Boost Your Fiber',
-      message: 'Adding beans, brown rice, or vegetables can improve digestion and steady your energy levels.'
-    });
+    insights.push({ icon: '🌾', title: 'Fiber Gap', message: 'Add legumes for stability.' });
   }
 
-  if (stats.qualityScore > 70) {
-    insights.push({
-      icon: '✨',
-      title: 'Great Choices!',
-      message: 'Your carb quality is excellent. You\'re favoring complex carbs that sustain energy.'
-    });
+  if (stats.qualityScore > 75) {
+    insights.push({ icon: '✨', title: 'Clean Path', message: 'Nutrient-dense carb choices.' });
   }
 
   if (stats.insulinStrain > 60) {
-    insights.push({
-      icon: '😴',
-      title: 'Energy Crash Risk',
-      message: 'High glycemic load means you might feel tired in 1-2 hours. Try pairing carbs with protein.'
-    });
+    insights.push({ icon: '😴', title: 'Energy Risk', message: 'Possible mid-day fatigue.' });
   }
 
-  const hasSoda = foodLog.some(e => e.food.category === 'drink' && e.food.sugar > 30);
-  if (hasSoda) {
-    insights.push({
-      icon: '🏃',
-      title: 'Athletic Performance',
-      message: 'Sodas spike then crash energy. Athletes perform better with yam, sweet potato, or brown rice.'
-    });
+  if (insights.length < 3) {
+    insights.push({ icon: '📈', title: 'Monitoring', message: 'Tracking your glucose levels.' });
   }
 
-  if (insights.length === 0) {
-    insights.push({
-      icon: '💪',
-      title: 'Keep Learning!',
-      message: 'Every meal logged builds your metabolic intelligence. You\'re investing in long-term health.'
-    });
-  }
-
-  return insights;
+  return insights.slice(0, 4);
 }
