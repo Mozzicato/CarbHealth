@@ -1,11 +1,33 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { calcDailyStats } from '../utils/calculator';
 
 export default function InsightsSection({ foodLog }) {
-  if (foodLog.length === 0) return null;
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiResult, setAiResult] = useState(null);
+
+  if (!foodLog || foodLog.length === 0) return null;
 
   const stats = calcDailyStats(foodLog);
-  const insights = generateInsights(stats, foodLog);
+  const localInsights = generateInsights(stats, foodLog);
+
+  const fetchAiInsights = async () => {
+    setAiLoading(true);
+    setAiResult(null);
+    try {
+      const r = await fetch('/api/insights', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ foodLog }),
+      });
+      const json = await r.json();
+      if (json?.ok && json.ai) setAiResult(json.ai);
+      else setAiResult({ raw: json?.error || 'No AI response' });
+    } catch (err) {
+      setAiResult({ raw: String(err) });
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   return (
     <div className="card">
@@ -15,15 +37,40 @@ export default function InsightsSection({ foodLog }) {
         <span className="card-badge">AI-Powered</span>
       </div>
 
-      <div className="insights-grid">
-        {insights.map((insight, i) => (
-          <div key={i} className="insight-card">
-            <div className="insight-icon">{insight.icon}</div>
-            <h4>{insight.title}</h4>
-            <p>{insight.message}</p>
-          </div>
-        ))}
+      <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+        <button className="btn-primary" onClick={fetchAiInsights} disabled={aiLoading}>
+          {aiLoading ? 'Generating AI insights...' : 'Get AI Insights'}
+        </button>
+        <button className="btn-secondary" onClick={() => setAiResult(null)}>Reset</button>
       </div>
+
+      {aiResult ? (
+        <div className="insights-grid">
+          {Array.isArray(aiResult.insights) ? (
+            aiResult.insights.map((insight, i) => (
+              <div key={i} className="insight-card">
+                <div className="insight-icon">{insight.severity === 'high' ? '🚨' : '💡'}</div>
+                <h4>{insight.title}</h4>
+                <p>{insight.message}</p>
+              </div>
+            ))
+          ) : (
+            <div className="insight-card">
+              <pre style={{ whiteSpace: 'pre-wrap' }}>{aiResult.raw || JSON.stringify(aiResult)}</pre>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="insights-grid">
+          {localInsights.map((insight, i) => (
+            <div key={i} className="insight-card">
+              <div className="insight-icon">{insight.icon}</div>
+              <h4>{insight.title}</h4>
+              <p>{insight.message}</p>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
