@@ -1,109 +1,102 @@
-# Vercel deployment — CarbHEALTH (manual)
+# Vercel deployment — CarbHEALTH (ready-to-deploy)
 
-A concise step‑by‑step guide to make the app public on Vercel and enable the AI / GROQ features.
+A short, action-first deployment guide — Gemini is the primary AI provider; Groq is a simple server-side fallback.
 
 ---
 
 ## ✅ Quick checklist (before you start)
-- Code pushed to `main` on GitHub (already done).
-- You have a Vercel account and access to the repo.  
-- Prod secrets available (OpenAI API key, Sanity/GROQ token) — **do not** add these as VITE_* variables.
+- Push code to `main` (or open a PR from `feat/groq-fallback` — preview deploys are automatic).
+- You have a Vercel account with access to the repo.
+- Add **server-only** secrets in Vercel (do NOT use VITE_ prefixed names for secrets).
+- Run tests locally: `npm test -- --run` and `npm run build` (both should succeed).
 
 ---
 
-## 1) Required environment variables (add in Vercel Project → Settings → Environment Variables)
-- GEMINI_API_KEY — **preferred** server-only key for `/api/insights` (production only)
-- GROQ_API_KEY — optional server-side fallback (Groq LPU) — set to enable Groq as secondary AI provider
-- GROQ_URL — optional (defaults to `https://api.groq.com/openai/v1`) if you need a custom Groq endpoint
-- GROQ_MODEL — optional (defaults to `llama3-8b`)
-- OPENAI_API_KEY — optional fallback for `/api/insights` (if you want OpenAI as tertiary fallback)
+## 1) Required environment variables (Vercel → Project → Settings → Environment Variables)
+Server (required/optional):
+- GEMINI_API_KEY — **primary** AI key (production)
+- GROQ_API_KEY — optional **Groq fallback** (set to enable Groq LPU)
+- GROQ_URL — optional override (default: `https://api.groq.com/openai/v1`)
+- GROQ_MODEL — optional (default: `llama3-8b`)
 
-Optional (frontend) Vite variables (prefix VITE_ — these are public):
-- VITE_APP_TITLE (default `CarbHEALTH`)
-- VITE_INITIAL_USERS
-- VITE_INITIAL_SUGAR_SAVED
-- VITE_ENABLE_TRIVIA (`true|false`)
-- VITE_API_URL (if you have a separate API)
+Public (Vite frontend — optional):
+- VITE_APP_TITLE, VITE_INITIAL_USERS, VITE_INITIAL_SUGAR_SAVED, VITE_ENABLE_TRIVIA, VITE_API_URL
 
-Important: keep GEMINI_API_KEY, GROQ_API_KEY and OPENAI_API_KEY as **server** env vars (do NOT prefix with `VITE_`).
+Notes:
+- Keep GEMINI_API_KEY and GROQ_API_KEY server-only (do NOT prefix with `VITE_`).
+- To *force* Groq in a Preview deployment, remove GEMINI_API_KEY from Preview env and set GROQ_API_KEY.
 
 ---
 
-## 2) Deploy via Vercel dashboard (recommended)
-1. Go to https://vercel.com → Import Project → GitHub → select `Mozzicato/CarbHealth`.
-2. Set Framework Preset = **Vite** (Vercel usually detects automatically).
+## 2) Vercel project setup (dashboard)
+1. Import the repo: **New Project → Import Git Repository** → select `Mozzicato/CarbHealth`.
+2. Framework Preset: **Vite** (auto-detected).
 3. Build Command: `npm run build`  
-   Output Directory: `dist`  
-   Root Directory: (project root)
-4. Add the Environment Variables listed above (click **Environment Variables** while configuring or after import in Project Settings).
-5. Click **Deploy**. Vercel will build and publish — the URL appears after deploy completes.
+   Output Directory: `dist`
+4. After import, add the server env vars from section (1) under **Settings → Environment Variables**.
+5. Deploy — Vercel will create a Preview for PRs and auto-deploy `main` to production.
 
-After first deploy, Vercel will auto-deploy on every push to `main`.
+We already configured serverless functions runtime in `vercel.json` (Node 18) so `api/*.js` routes run correctly.
 
----
-
-## 3) (Alternative) Deploy using Vercel CLI
-```bash
-# install CLI if needed
-npm i -g vercel
-vercel login
-# run an interactive production deploy
-vercel --prod
-```
-
-Add production env vars via CLI (interactive):
-```bash
-vercel env add OPENAI_API_KEY production
-vercel env add SANITY_PROJECT_ID production
-vercel env add SANITY_DATASET production
-vercel env add GROQ_API_KEY production
-```
+Note: Vercel accepts either a top-level `functions` config or a `builds` block, but not both. This repository uses the `functions` setting (no `builds` block) so you should not add a `builds` section to `vercel.json` for this project.
 
 ---
 
-## 4) Post‑deploy checks / smoke tests
-- Open your site: `https://<your-project>.vercel.app` — check UI, hero stats, food logger.  
-- Test AI endpoint (requires OPENAI_API_KEY set in Vercel):
+## 3) CLI deploy (one-liners)
+- Login & deploy (interactive):
+  - `npm i -g vercel && vercel login && vercel --prod`
+- Add server env vars via CLI (example):
+  - `vercel env add GEMINI_API_KEY production`
+  - `vercel env add GROQ_API_KEY preview`
+
+---
+
+## 4) Smoke tests (after deploy) 🔎
+- Basic site check: open `https://<your-project>.vercel.app` and verify UI loads.
+
+- AI (Gemini primary) — sample request:
 ```bash
-curl -X POST https://<your-deployment>/api/insights \
+curl -sS -X POST https://<your-deployment>/api/insights \
   -H 'Content-Type: application/json' \
-  -d '{"foodLog":[{"food":{"name":"Coke","carbs":39,"sugar":39,"gi":63},"quantity":1,"time":"2026-02-19T00:00:00Z"}]}'
+  -d '{"foodLog":[{"food":{"name":"Coke","carbs":39,"sugar":39},"quantity":1,"time":"2026-02-19T00:00:00Z"}]}' | jq
 ```
-- Test GROQ fallback endpoint (local fallback; no SANITY needed):
+- Force Groq fallback (Preview): remove `GEMINI_API_KEY` from Preview env, set `GROQ_API_KEY`, then run the same `/api/insights` curl. The request will route to Groq automatically.
+
+- GROQ-only quick check:
 ```bash
-curl -X POST https://<your-deployment>/api/groq \
+curl -sS -X POST https://<your-deployment>/api/groq \
   -H 'Content-Type: application/json' \
-  -d '{"query":"*[_type == \"food\"]"}'
+  -d '{"query":"*[_type == \"food\"]"}' | jq
 ```
-- Check serverless logs in Vercel: Project → Deployments → select deployment → **Logs**.
+- Inspect server logs in Vercel: **Project → Deployments → (select deployment) → Logs**.
 
 ---
 
-## 5) Troubleshooting (common issues)
-- `500 /api/insights` → OPENAI_API_KEY missing or invalid. Add/set the key in Project Settings and redeploy.
-- `502` from Sanity proxy → SANITY_PROJECT_ID / SANITY_DATASET / GROQ_API_KEY wrong or token lacks permissions.
-- AI returns non-JSON → UI falls back to `raw` text; tweak prompt or check model usage / limits.
-- Secrets accidentally committed? Rotate them immediately and update Vercel.
+## 5) Common issues & fixes
+- 500 from `/api/insights`: missing/invalid GEMINI_API_KEY (or GROQ_API_KEY). Add server env vars and redeploy.
+- 502 from Groq: invalid `GROQ_API_KEY` / `GROQ_URL` or model not allowed — verify keys and model name.
+- AI returns non‑JSON: UI shows `raw` — check model output and prompts; increase `temperature`/`max_tokens` only if intentional.
+- Preview not using Groq: ensure Preview environment has `GROQ_API_KEY` set and `GEMINI_API_KEY` removed (if you want to force Groq).
 
 ---
 
-## 6) Security & cost tips
-- Keep keys server-side only. Never expose WRITE tokens to the client.  
-- Add rate-limiting or caching to `/api/insights` if you expect frequent calls (OpenAI costs).  
-- Add monitoring & alerting in Vercel or with external tools.
+## 6) Security & best practices
+- Never expose write-capable keys to the browser (no VITE_ prefix for server secrets).
+- Add rate limiting or caching on `/api/insights` if traffic/cost is a concern.
+- Use Vercel Environment Scopes: set different keys for `preview` vs `production`.
 
 ---
 
-## 7) Rollback / redeploy
-- To rollback to a previous deployment: Vercel → Deployments → Select older deployment → **Promote to Production**.
-- To force a rebuild after env changes: push a trivial commit or click **Redeploy** on the latest deployment.
+## 7) Rollback, PRs & CI
+- Vercel auto-creates preview deployments for PRs — use this to validate Groq fallback before merging.
+- To rollback: **Deployments → choose older deployment → Promote to Production**.
+- After merging `feat/groq-fallback` to `main`, Vercel will deploy production automatically.
 
 ---
 
-## 8) Want me to do it?
-- I can add the env vars and trigger a deploy if you provide the keys (or give CLI access).  
-- Otherwise follow the steps above — it takes ~2–5 minutes.
+## 8) I can deploy for you
+- I can open the PR, add Vercel env vars, and run a smoke test if you provide the server keys (or log into Vercel). 🔐
 
 ---
 
-Good luck — ping me with your Vercel URL once deployed and I’ll run a quick acceptance check (AI + GROQ tests). 🚀
+Happy to deploy now — tell me whether you want me to (A) open the PR and leave it for you, or (B) merge & trigger a production deploy. 🚀
