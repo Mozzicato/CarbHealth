@@ -36,9 +36,9 @@ Notes:
 4. After import, add the server env vars from section (1) under **Settings → Environment Variables**.
 5. Deploy — Vercel will create a Preview for PRs and auto-deploy `main` to production.
 
-We already configured serverless functions runtime in `vercel.json` (Node 18) so `api/*.js` routes run correctly.
+Vercel auto-detects serverless functions; there is no `functions` block in `vercel.json`. Vercel will detect and run `api/*.js` serverless routes automatically using the appropriate Node runtime.
 
-Note: Vercel accepts either a top-level `functions` config or a `builds` block, but not both. This repository uses the `functions` setting (no `builds` block) so you should not add a `builds` section to `vercel.json` for this project.
+Note: Vercel accepts either a top-level `functions` config or a `builds` block, but not both. This repository intentionally does not include a `functions` block in `vercel.json` to avoid runtime version formatting issues — do not add a `builds` section alongside a `functions` block.
 
 ---
 
