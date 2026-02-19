@@ -1,18 +1,19 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { calcDailyStats } from '../utils/calculator';
 
 export default function InsightsSection({ foodLog }) {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState(null);
+  const lastLoggedCount = useRef(foodLog?.length || 0);
 
-  if (!foodLog || foodLog.length === 0) return null;
+  const stats = calcDailyStats(foodLog || []);
+  const localInsights = generateInsights(stats, foodLog || []);
 
-  const stats = calcDailyStats(foodLog);
-  const localInsights = generateInsights(stats, foodLog);
+  const fetchAiInsights = useCallback(async () => {
+    if (!foodLog || foodLog.length === 0) return;
 
-  const fetchAiInsights = async () => {
     setAiLoading(true);
-    setAiResult(null);
+    // setAiResult(null); // Keep old insights while loading for smoother UI
     try {
       const r = await fetch('/api/insights', {
         method: 'POST',
@@ -20,14 +21,32 @@ export default function InsightsSection({ foodLog }) {
         body: JSON.stringify({ foodLog }),
       });
       const json = await r.json();
-      if (json?.ok && json.ai) setAiResult({ ...json.ai, _provider: json.provider });
-      else setAiResult({ raw: json?.error || json?.details || 'No AI response', _provider: json?.provider });
+      if (json?.ok && json.ai) {
+        setAiResult({ ...json.ai, _provider: json.provider });
+      } else {
+        setAiResult({ raw: json?.error || json?.details || 'No AI response', _provider: json?.provider });
+      }
     } catch (err) {
+      console.error('AI Insight Error:', err);
       setAiResult({ raw: String(err) });
     } finally {
       setAiLoading(false);
     }
-  };
+  }, [foodLog]);
+
+  // AUTOMATIC UPDATES: Trigger whenever a new item is added
+  useEffect(() => {
+    if (foodLog.length > 0 && foodLog.length !== lastLoggedCount.current) {
+      // Debounce slightly to avoid double calls if many items added rapidly
+      const timer = setTimeout(() => {
+        fetchAiInsights();
+      }, 1000);
+      lastLoggedCount.current = foodLog.length;
+      return () => clearTimeout(timer);
+    }
+  }, [foodLog.length, fetchAiInsights]);
+
+  if (!foodLog || foodLog.length === 0) return null;
 
   return (
     <div className="card">
@@ -39,9 +58,9 @@ export default function InsightsSection({ foodLog }) {
 
       <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
         <button className="btn-primary" onClick={fetchAiInsights} disabled={aiLoading}>
-          {aiLoading ? 'Generating AI insights...' : 'Get AI Insights'}
+          {aiLoading ? 'Analyzing...' : 'Refresh AI Insights'}
         </button>
-        <button className="btn-secondary" onClick={() => setAiResult(null)}>Reset</button>
+        <button className="btn-secondary" onClick={() => setAiResult(null)}>Clear AI</button>
       </div>
 
       {aiResult ? (

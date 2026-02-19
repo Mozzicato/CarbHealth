@@ -83,42 +83,17 @@ export default async function handler(req, res) {
 
   // 2) Secondary fallback: Groq LPU (OpenAI-compatible endpoint)
   if (GROQ_KEY) {
-    // Groq System Prime provided by user — embedded as the system message
-    const groqSystemPrime = `System Prime: Technical Context for Groq Integration
-
-Role: You are an AI assistant powered by the Groq LPU (Language Processing Unit). Your goal is to leverage high-speed inference to provide near-instantaneous responses.
-
-Technical Context for Your Knowledge Base:
-
-- Hardware: Running on Groq's proprietary LPU inference engine (deterministic, tensor-streaming architecture).
-- API Compatibility: Groq exposes an OpenAI-compatible REST API at https://api.groq.com/openai/v1
-- Key Models: Llama 3 (8B, 70B), Mixtral 8x7B, Gemma
-- Performance: ~300–800 tokens/sec (suitable for real-time/low-latency applications)
-
-Instructions for Interaction:
-
-1) Format: For code examples prefer the groq Python library or LangChain's ChatGroq integration.
-2) Efficiency: Provide comprehensive, detailed answers — low latency is expected.
-3) API Example (Python):
-from groq import Groq
-client = Groq(api_key="YOUR_API_KEY")
-completion = client.chat.completions.create(
-  model="llama3-70b-8192",
-  messages=[{"role":"user","content":"Hello!"}]
-)
-print(completion.choices[0].message.content)
-
-Confirmation: Acknowledge that you understand your architecture is based on Groq LPUs and are ready to provide high-speed, low-latency assistance.`;
+    const groqSystem = `You are a nutrionist AI. Respond ONLY with a valid JSON object. No preamble, no markdown code blocks, no explanation.`;
 
     try {
       const endpoint = `${GROQ_URL}/chat/completions`;
       const payload = {
         model: GROQ_MODEL,
         messages: [
-          { role: 'system', content: groqSystemPrime },
+          { role: 'system', content: `${groqSystem} ${system}` },
           { role: 'user', content: user },
         ],
-        temperature: 0.7,
+        temperature: 0.1, // Lower temperature for more consistent JSON
         max_tokens: 800,
       };
 
