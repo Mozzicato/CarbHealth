@@ -11,10 +11,9 @@ export default async function handler(req, res) {
   const GROQ_KEY = process.env.GROQ_API_KEY;
   const GROQ_URL = process.env.GROQ_API_URL || 'https://api.groq.com/openai/v1';
   const GROQ_MODEL = process.env.GROQ_MODEL || 'llama3-8b';
-  const OPENAI_KEY = process.env.OPENAI_API_KEY;
 
-  if (!GEMINI_KEY && !GROQ_KEY && !OPENAI_KEY) {
-    return res.status(500).json({ error: 'AI provider API key not configured on server. Set GEMINI_API_KEY, GROQ_API_KEY or OPENAI_API_KEY.' });
+  if (!GEMINI_KEY && !GROQ_KEY) {
+    return res.status(500).json({ error: 'AI provider API key not configured on server. Set GEMINI_API_KEY or GROQ_API_KEY.' });
   }
 
   const system = `You are a concise nutrition assistant. Given a user's food log, produce up to 5 short, actionable insights about sugar risk, fiber suggestions, healthy swaps, and a one-line summary.`;
@@ -38,17 +37,28 @@ export default async function handler(req, res) {
 
       if (!r.ok) {
         const txt = await r.text();
-        return res.status(502).json({ error: 'Upstream Gemini error', details: txt });
+        // If Gemini fails, prefer Groq when configured; otherwise return an upstream error.
+        if (GROQ_KEY) {
+          console.warn('Gemini upstream error — falling back to Groq:', txt);
+          // intentionally fall through to Groq branch below
+        } else {
+          return res.status(502).json({ error: 'Upstream Gemini error', details: txt });
+        }
+      } else {
+        const data = await r.json();
+        const text = data.candidates?.[0]?.output || data.candidates?.[0]?.content?.[0]?.text || data.output?.[0]?.content_text || data.output_text || '';
+
+        let parsed = null;
+        try { parsed = JSON.parse(text); } catch (err) { parsed = { raw: text }; }
+        return res.status(200).json({ ok: true, ai: parsed });
       }
-
-      const data = await r.json();
-      const text = data.candidates?.[0]?.output || data.candidates?.[0]?.content?.[0]?.text || data.output?.[0]?.content_text || data.output_text || '';
-
-      let parsed = null;
-      try { parsed = JSON.parse(text); } catch (err) { parsed = { raw: text }; }
-      return res.status(200).json({ ok: true, ai: parsed });
     } catch (err) {
-      return res.status(500).json({ error: 'Gemini request failed', message: String(err) });
+      // If Gemini threw but Groq is configured, fall back to Groq; otherwise return error
+      if (GROQ_KEY) {
+        console.warn('Gemini request failed — falling back to Groq:', String(err));
+      } else {
+        return res.status(500).json({ error: 'Gemini request failed', message: String(err) });
+      }
     }
   }
 
@@ -117,38 +127,6 @@ Confirmation: Acknowledge that you understand your architecture is based on Groq
       return res.status(500).json({ error: 'Groq request failed', message: String(err) });
     }
   }
-
-  // 3) Tertiary fallback: OpenAI
-  try {
-    const r = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${OPENAI_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-3.5-turbo',
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: user },
-        ],
-        max_tokens: 400,
-        temperature: 0.7,
-      }),
-    });
-
-    if (!r.ok) {
-      const txt = await r.text();
-      return res.status(502).json({ error: 'Upstream AI error', details: txt });
-    }
-
-    const data = await r.json();
-    const text = data.choices?.[0]?.message?.content ?? '';
-
-    let parsed = null;
-    try { parsed = JSON.parse(text); } catch (err) { parsed = { raw: text }; }
-    return res.status(200).json({ ok: true, ai: parsed });
-  } catch (err) {
-    return res.status(500).json({ error: 'Server error', message: String(err) });
-  }
 }
+
+

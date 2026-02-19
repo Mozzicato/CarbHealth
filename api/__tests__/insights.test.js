@@ -10,7 +10,7 @@ function mockReqRes(body) {
   return { req, res }
 }
 
-describe('AI insights endpoint (Gemini → Groq → OpenAI)', () => {
+describe('AI insights endpoint (Gemini → Groq)', () => {
   let origFetch
   const OLDS = { ...process.env }
 
@@ -26,7 +26,6 @@ describe('AI insights endpoint (Gemini → Groq → OpenAI)', () => {
   it('returns 500 when no AI keys configured', async () => {
     delete process.env.GEMINI_API_KEY
     delete process.env.GROQ_API_KEY
-    delete process.env.OPENAI_API_KEY
 
     const { req, res } = mockReqRes({ foodLog: [] })
     await handler(req, res)
@@ -61,4 +60,28 @@ describe('AI insights endpoint (Gemini → Groq → OpenAI)', () => {
     expect(global.fetch).toHaveBeenCalled()
     expect(res.status).toHaveBeenCalledWith(200)
   })
+
+  it('falls back to Groq when Gemini responds with non-OK and GROQ_API_KEY is set', async () => {
+    process.env.GEMINI_API_KEY = 'gemini-token'
+    process.env.GROQ_API_KEY = 'groq-token'
+
+    // first call (Gemini) returns non-OK; second call (Groq) succeeds
+    global.fetch = vi.fn((url) => {
+      if (String(url).includes('generativelanguage.googleapis.com')) {
+        return Promise.resolve({ ok: false, text: () => Promise.resolve('gemini error') })
+      }
+      // Groq-style success
+      const aiResponse = JSON.stringify({ insights: [{ title: 'From Groq', message: 'ok', severity: 'low' }], summary: 'groq' })
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ choices: [{ message: { content: aiResponse } }] }) })
+    })
+
+    const { req, res } = mockReqRes({ foodLog: [{ food: { name: 'Coke', carbs: 39, sugar: 39 }, quantity: 1 }] })
+    await handler(req, res)
+
+    expect(global.fetch).toHaveBeenCalled()
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ ok: true, ai: expect.any(Object) }))
+  })
+
+
 })
